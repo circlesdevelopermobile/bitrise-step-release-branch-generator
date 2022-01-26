@@ -4,6 +4,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -11,16 +15,14 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"os"
-	"strings"
-	"time"
 )
 
-func gitCloneMaster(url string, path string, auth transport.AuthMethod) (*git.Repository, error) {
+func gitClone(url string, path string, branch string, auth transport.AuthMethod) (*git.Repository, error) {
+	refName := gitRefName(branch)
 	repo, err := git.PlainClone(path, false, &git.CloneOptions{
 		URL:           url,
 		Auth:          auth,
-		ReferenceName: "refs/heads/master",
+		ReferenceName: refName,
 		Progress:      os.Stdout,
 		Tags:          git.AllTags,
 	})
@@ -31,12 +33,16 @@ func gitRefName(name string) plumbing.ReferenceName {
 	return plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", name))
 }
 
-func gitCheckoutBranch(repo *git.Repository, branchName string) {
+func gitCheckoutBranch(repo *git.Repository, branchName string) error {
 	branch := gitRefName(branchName)
 	wt, _ := repo.Worktree()
-	_ = wt.Checkout(&git.CheckoutOptions{
+	err := wt.Checkout(&git.CheckoutOptions{
 		Branch: branch,
 	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func gitAddAll(repo *git.Repository) error {
@@ -75,6 +81,7 @@ func gitTag(repo *git.Repository, tagName string) error {
 }
 
 func gitPushTag(repo *git.Repository, auth transport.AuthMethod, tagName string) error {
+	fmt.Fprintf(os.Stdout, "Attempting to push tag %s\n", tagName)
 	refSpec := config.RefSpec("refs/tags/*:refs/tags/*")
 	if tagName != "" {
 		refSpec = config.RefSpec(fmt.Sprintf("refs/tags/%[1]s:refs/tags/%[1]s", tagName))
@@ -145,18 +152,30 @@ func processTagFile(repo *git.Repository, auth transport.AuthMethod, config *Con
 		return nil
 	}
 	for _, tag := range tags {
-		if err := gitTag(repo, tag); err != nil {
+
+		// Append suffix to tag parsed from tag file
+		var sb strings.Builder
+		sb.WriteString(tag)
+		sb.WriteString(config.TagNameSuffix)
+		newTagName := sb.String()
+
+		// Git tag locally
+		if err := gitTag(repo, newTagName); err != nil {
 			if err == git.ErrTagExists {
-				fmt.Fprintf(os.Stderr, "WARN: tag %s already exists in local! Skipipng\n", tag)
+				fmt.Fprintf(os.Stderr, "WARN: tag %s already exists in local! Skipping!\n", tag)
 			} else {
 				return err
 			}
 		}
-		tagsToPush = append(tagsToPush, tag)
+		tagsToPush = append(tagsToPush, newTagName)
 	}
-	for _, tagToPush := range tagsToPush {
-		if err := gitPushTag(repo, auth, tagToPush); err != nil {
-			return err
+	if config.DebugFlag {
+		_, _ = fmt.Fprintf(os.Stdout, "LOG: Debug Flag detected. Skipping pushing of tags\n")
+	} else {
+		for _, tagToPush := range tagsToPush {
+			if err := gitPushTag(repo, auth, tagToPush); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

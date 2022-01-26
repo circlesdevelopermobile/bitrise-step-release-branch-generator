@@ -59,6 +59,14 @@ inputs:
       is_expand: true
       is_required: true
       is_sensitive: true
+  - branch_name: $BITRISE_GIT_BRANCH
+    opts:
+      title: Branch to clone
+      summary: Branch to clone
+      description: |
+        Branch that will be cloned, and where the release branch will originate from
+      is_expand: true
+      is_required: true
   - version_code_file: buildscripts/dependencies.gradle
     opts:
       title: versionCode File
@@ -99,12 +107,11 @@ inputs:
         File containing the tags to be pushed
       is_expand: false
       is_required: true
-  - tag_file_template: "{{.Major}}.{{add .Minor 1}}.{{.Rev}}-{{.Suffix}}"
+  - debug_flag: true
     opts:
-      title: TAGFILE Template
-      summary: TAGFILE Template
-      description: |
-        Must be a valid go template
+      title: Debug flag
+      summary: Debug flag
+      description: If true, workflow will initialise, print the env variables used, and exit
       is_expand: false
       is_required: true
 
